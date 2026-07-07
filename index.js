@@ -7,14 +7,12 @@ dotenv.config();
 const bot = new Telegraf('8874819131:AAEUl7ftV_btjFZND3IWsJMb0eez99nbvPc');
 const ADMIN_ID = 8089667910;
 
-// تابع دکمه بازگشت
-function backButton() {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('🔙 بازگشت به منو اصلی', 'back_to_main')]
-  ]);
+let adminUploadState = {};
+
+function backButton(text = '🔙 بازگشت به منو اصلی') {
+  return Markup.inlineKeyboard([[Markup.button.callback(text, 'back_to_main')]]);
 }
 
-// دیتابیس
 const db = new sqlite3.Database('bot.db');
 
 db.serialize(() => {
@@ -46,7 +44,6 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-// Start command with main menu
 bot.start((ctx) => {
   const mainMenu = Markup.inlineKeyboard([
     [Markup.button.callback('📢 دریافت اخبار', 'get_news')],
@@ -60,13 +57,11 @@ bot.start((ctx) => {
 
 bot.command('news', (ctx) => {
   db.all('SELECT * FROM notifications ORDER BY sent_at DESC LIMIT 5', (err, rows) => {
-    if (rows.length === 0) return ctx.reply('فعلا از سوی ادمین خبری ثبت نشده');
+    if (rows.length === 0) return ctx.reply('فعلا خبری ثبت نشده');
     rows.forEach(notif => {
       const msg = `📢 ${notif.title}\n\n${notif.content}`;
       if (notif.file_id) {
-        notif.file_type === 'document' 
-          ? ctx.replyWithDocument(notif.file_id, { caption: msg })
-          : ctx.replyWithPhoto(notif.file_id, { caption: msg });
+        notif.file_type === 'document' ? ctx.replyWithDocument(notif.file_id, { caption: msg }) : ctx.replyWithPhoto(notif.file_id, { caption: msg });
       } else {
         ctx.reply(msg);
       }
@@ -74,24 +69,17 @@ bot.command('news', (ctx) => {
   });
 });
 
-// Handle main menu callbacks
 bot.action('get_news', (ctx) => {
-  ctx.answerCbQuery('در حال دریافت اخبار...');
+  ctx.answerCbQuery();
   db.all('SELECT * FROM notifications ORDER BY sent_at DESC LIMIT 5', (err, rows) => {
-    if (err) return ctx.editMessageText('خطا در دریافت اخبار');
-    if (rows.length === 0) return ctx.editMessageText('هنوز خبری ثبت نشده است.');
-
-    ctx.editMessageText('📢 **جدیدترین اخبار:**\n\n');
-    rows.forEach((notif) => {
-      let message = `📢 ${notif.title}\n\n${notif.content}`;
+    if (rows.length === 0) return ctx.editMessageText('هنوز خبری ثبت نشده');
+    ctx.editMessageText('📢 جدیدترین اخبار:');
+    rows.forEach(notif => {
+      const msg = `📢 ${notif.title}\n\n${notif.content}`;
       if (notif.file_id) {
-        if (notif.file_type === 'document') {
-          ctx.replyWithDocument(notif.file_id, { caption: message });
-        } else if (notif.file_type === 'photo') {
-          ctx.replyWithPhoto(notif.file_id, { caption: message });
-        }
+        notif.file_type === 'document' ? ctx.replyWithDocument(notif.file_id, { caption: msg }) : ctx.replyWithPhoto(notif.file_id, { caption: msg });
       } else {
-        ctx.reply(message);
+        ctx.reply(msg);
       }
     });
   });
@@ -99,164 +87,93 @@ bot.action('get_news', (ctx) => {
 
 bot.action('latest_notes', (ctx) => {
   ctx.answerCbQuery();
-  ctx.editMessageText('📚 جدیدترین جزوه‌ها هنوز اضافه نشده‌اند.\n\nبه زودی جزوه‌های به‌روز اینجا قرار می‌گیرد.');
+  const notesMenu = Markup.inlineKeyboard([
+    [Markup.button.callback('📖 عربی', 'notes_arabic')],
+    [Markup.button.callback('📖 فارسی', 'notes_persian')],
+    [Markup.button.callback('📖 دینی', 'notes_religion')],
+    [Markup.button.callback('📖 زبان', 'notes_language')],
+    [Markup.button.callback('📖 ریاضی', 'notes_math')],
+    [Markup.button.callback('📖 تاریخ', 'notes_history')],
+    [Markup.button.callback('📖 جامعه شناسی', 'notes_sociology')],
+    [Markup.button.callback('📖 جغرافیا', 'notes_geography')],
+    [Markup.button.callback('📖 روانشناسی', 'notes_psychology')],
+    [Markup.button.callback('📖 فنون', 'notes_techniques')],
+    [Markup.button.callback('📖 فلسفه', 'notes_philosophy')],
+    [Markup.button.callback('🔥 جزوه کیری خفنه حسام', 'notes_hosam')],
+    [Markup.button.callback('🔙 بازگشت به منو', 'back_to_main')]
+  ]);
+  ctx.editMessageText('📚 لطفا درس مورد نظر را انتخاب کنید:', notesMenu);
+});
+
+bot.action(/notes_(.+)/, (ctx) => {
+  const lesson = ctx.match[1];
+  if (ctx.from.id === ADMIN_ID) {
+    adminUploadState[ctx.from.id] = lesson;
+    ctx.editMessageText(`📤 آپلود فایل برای درس **${lesson}**\n\nفایل (عکس یا PDF) همراه با کپشن بفرستید.`);
+  } else {
+    ctx.editMessageText(`📚 جزوه **${lesson}** هنوز آپلود نشده.\n\nبه زودی اضافه می‌شود.`, 
+      Markup.inlineKeyboard([
+        [Markup.button.callback('🔙 بازگشت به درس‌ها', 'latest_notes')],
+        [Markup.button.callback('🔙 منو اصلی', 'back_to_main')]
+      ]));
+  }
+});
+
+bot.on(['document', 'photo'], async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID || !adminUploadState[ctx.from.id]) return;
+
+  const lesson = adminUploadState[ctx.from.id];
+  let fileId, fileType = 'document';
+
+  if (ctx.message.document) {
+    fileId = ctx.message.document.file_id;
+  } else if (ctx.message.photo) {
+    fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    fileType = 'photo';
+  }
+
+  const caption = ctx.message.caption || `جزوه ${lesson}`;
+
+  db.run(`INSERT INTO notifications (title, content, file_id, file_type) VALUES (?, ?, ?, ?)`,
+    [`جزوه ${lesson}`, caption, fileId, fileType], (err) => {
+      if (err) ctx.reply('خطا');
+      else ctx.reply(`✅ فایل برای درس **${lesson}** ذخیره شد!`);
+      delete adminUploadState[ctx.from.id];
+    });
 });
 
 bot.action('support', (ctx) => {
   ctx.answerCbQuery();
-  ctx.editMessageText('❓ پشتیبانی:\n\nبرای کمک، پیام خود را به ادمین ارسال کنید.');
+  ctx.editMessageText('❓ پشتیبانی:\n\n@FOUKYOUMAN', backButton());
 });
 
 bot.action('about', (ctx) => {
   ctx.answerCbQuery();
-  ctx.editMessageText('ℹ️ درباره ربات:\n\nاین ربات برای اطلاع‌رسانی اخبار و جزوه‌های درسی طراحی شده است.\n\nنسخه: 1.1');
+  ctx.editMessageText('ℹ️ درباره ربات:\n\nاین ربات برای اطلاع‌رسانی اخبار و جزوه‌های درسی طراحی شده است.', backButton());
+});
+
+bot.action('back_to_main', (ctx) => {
+  ctx.answerCbQuery();
+  const mainMenu = Markup.inlineKeyboard([
+    [Markup.button.callback('📢 دریافت اخبار', 'get_news')],
+    [Markup.button.callback('📚 جدیدترین جزوه‌ها', 'latest_notes')],
+    [Markup.button.callback('❓ پشتیبانی', 'support')],
+    [Markup.button.callback('ℹ️ درباره ربات', 'about')],
+  ]);
+  ctx.editMessageText('سلام! خوش آمدید به ربات اطلاع‌رسانی برنامه‌های درسی 🎓\n\nلطفا از منوی زیر انتخاب کنید:', mainMenu);
 });
 
 bot.command('admin', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return ctx.reply('⛔ دسترسی غیرمجاز');
-  
-  ctx.reply('🛠 پنل مدیریت ادمین:', Markup.inlineKeyboard([
+  if (ctx.from.id !== ADMIN_ID) return ctx.reply('دسترسی غیرمجاز');
+  ctx.reply('🛠 پنل ادمین', Markup.inlineKeyboard([
     [Markup.button.callback('📊 آمار', 'stats')],
     [Markup.button.callback('👥 کاربران', 'users')],
     [Markup.button.callback('📢 پیام همگانی', 'broadcast')],
-    [Markup.button.callback('🗑 مدیریت اعلان‌ها', 'manage_notifications')]
   ]));
-});
-
-// آمار
-bot.action('stats', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-  db.get('SELECT COUNT(*) as count FROM users', (_, u) => {
-    db.get('SELECT COUNT(*) as count FROM notifications', (_, n) => {
-      ctx.editMessageText(`📊 آمار:\n\n👤 کاربران: ${u.count}\n📢 اعلان‌ها: ${n.count}`, 
-        backButton()
-      );
-    });
-  });
-});
-
-// کاربران
-bot.action('users', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-  db.all('SELECT * FROM users ORDER BY registered_at DESC LIMIT 30', (_, users) => {
-    let text = '👥 آخرین کاربران:\n\n';
-    users.forEach(u => text += `${u.id} - ${u.first_name} ${u.username ? '@'+u.username : ''}\n`);
-    ctx.editMessageText(text, backButton());
-  });
-});
-
-// پیام همگانی
-bot.action('broadcast', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-  ctx.editMessageText('✍️ متن پیام همگانی را ارسال کنید:');
-  bot.once('text', (msgCtx) => {
-    if (msgCtx.from.id !== ADMIN_ID) return;
-    db.all('SELECT id FROM users', (_, users) => {
-      users.forEach(user => {
-        bot.telegram.sendMessage(user.id, msgCtx.message.text).catch(() => {});
-      });
-      msgCtx.reply('✅ پیام همگانی ارسال شد!');
-    });
-  });
-});
-
-// آپلود فایل
-bot.on(['document', 'photo'], (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  let fileId, type;
-  if (ctx.message.document) {
-    fileId = ctx.message.document.file_id;
-    type = 'document';
-  } else {
-    fileId = ctx.message.photo[ctx.message.photo.length-1].file_id;
-    type = 'photo';
-  }
-
-  const content = ctx.message.caption || 'بدون توضیحات';
-  
-  db.run(`INSERT INTO notifications (title, content, file_id, file_type) VALUES (?, ?, ?, ?)`,
-    ['اعلان جدید', content, fileId, type], () => {
-      ctx.reply('✅ فایل با موفقیت ثبت شد.');
-    });
-});
-
-// مدیریت اعلان‌ها
-bot.action('manage_notifications', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  db.all('SELECT * FROM notifications ORDER BY sent_at DESC', (err, notifications) => {
-    if (notifications.length === 0) {
-      return ctx.editMessageText('هیچ اعلانی وجود ندارد.', backButton());
-    }
-
-    let message = '🗑 لیست اعلان‌ها:\n\n';
-    const buttons = [];
-
-    notifications.forEach(notif => {
-      message += `${notif.id}. ${notif.title}\n`;
-      buttons.push([Markup.button.callback(`🗑 حذف ${notif.id}`, `delete_${notif.id}`)]);
-    });
-
-    buttons.push([Markup.button.callback('🔙 بازگشت', 'back_to_main')]);
-
-    ctx.editMessageText(message, Markup.inlineKeyboard(buttons));
-  });
-});
-
-// حذف اعلان
-bot.action(/delete_(\d+)/, (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  const notifId = ctx.match[1];
-
-  db.run('DELETE FROM notifications WHERE id = ?', [notifId], (err) => {
-    if (err) {
-      return ctx.answerCbQuery('خطا در حذف!');
-    }
-    ctx.answerCbQuery('✅ اعلان حذف شد');
-    ctx.editMessageText('✅ اعلان با موفقیت حذف شد.\nبرای دیدن لیست جدید دوباره /admin بزنید.');
-  });
-});
-
-// بازگشت به منو اصلی
-bot.action('back_to_main', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return;
-
-  ctx.editMessageText('🛠 پنل مدیریت ادمین:', Markup.inlineKeyboard([
-    [Markup.button.callback('📊 آمار', 'stats')],
-    [Markup.button.callback('👥 کاربران', 'users')],
-    [Markup.button.callback('📢 پیام همگانی', 'broadcast')],
-    [Markup.button.callback('🗑 مدیریت اعلان‌ها', 'manage_notifications')]
-  ]));
-});
-
-// Easter Egg: Siuu !
-bot.hears(/siuu/i, async (ctx) => {
-  const messages = [
-    "گریه کن رونال7دو فن پرتغال امشب حذف میشه",
-  "سوووو و کیر خر",
-    "گریه کن مسی همیشه بهترینه",
-    "Siuuuuuuuuuuuuu! 🏆"
-  ];
-
-  // انتخاب تصادفی پیام
-  const randomMsg = messages[Math.floor(Math.random() * messages.length)];
-
-  await ctx.reply(randomMsg);
-
-  // ارسال عکس رونالدو (c:\Users\Ehsan\Desktop\goodbot\photo_2026-07-06_20-17-50.jpg)
-  try {
-    await ctx.replyWithPhoto('https://i.imgur.com/0z0z0z0.jpg', {
-      caption: 'SIUUUUUUU! 🐐'
-    });
-  } catch (e) {
-    // اگر عکس لود نشد مشکلی پیش نمیاد
-  }
 });
 
 bot.launch()
-  .then(() => console.log('🤖 ربات با موفقیت راه‌اندازی شد!'))
+  .then(() => console.log('🤖 ربات راه‌اندازی شد!'))
   .catch(err => console.error('خطا:', err));
 
 console.log('ربات در حال اجراست...');
