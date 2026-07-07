@@ -46,7 +46,17 @@ bot.use(async (ctx, next) => {
   return next();
 });
 
-bot.start((ctx) => ctx.reply('✅ سلام! ربات اطلاع‌رسانی برنامه‌های درسی فعال شد.\n/news برای دریافت اخبار'));
+// Start command with main menu
+bot.start((ctx) => {
+  const mainMenu = Markup.inlineKeyboard([
+    [Markup.button.callback('📢 دریافت اخبار', 'get_news')],
+    [Markup.button.callback('📚 جدیدترین جزوه‌ها', 'latest_notes')],
+    [Markup.button.callback('❓ پشتیبانی', 'support')],
+    [Markup.button.callback('ℹ️ درباره ربات', 'about')],
+  ]);
+
+  ctx.reply('سلام! خوش آمدید به ربات اطلاع‌رسانی برنامه‌های درسی 🎓\n\nلطفا از منوی زیر انتخاب کنید:', mainMenu);
+});
 
 bot.command('news', (ctx) => {
   db.all('SELECT * FROM notifications ORDER BY sent_at DESC LIMIT 5', (err, rows) => {
@@ -62,6 +72,44 @@ bot.command('news', (ctx) => {
       }
     });
   });
+});
+
+// Handle main menu callbacks
+bot.action('get_news', (ctx) => {
+  ctx.answerCbQuery('در حال دریافت اخبار...');
+  db.all('SELECT * FROM notifications ORDER BY sent_at DESC LIMIT 5', (err, rows) => {
+    if (err) return ctx.editMessageText('خطا در دریافت اخبار');
+    if (rows.length === 0) return ctx.editMessageText('هنوز خبری ثبت نشده است.');
+
+    ctx.editMessageText('📢 **جدیدترین اخبار:**\n\n');
+    rows.forEach((notif) => {
+      let message = `📢 ${notif.title}\n\n${notif.content}`;
+      if (notif.file_id) {
+        if (notif.file_type === 'document') {
+          ctx.replyWithDocument(notif.file_id, { caption: message });
+        } else if (notif.file_type === 'photo') {
+          ctx.replyWithPhoto(notif.file_id, { caption: message });
+        }
+      } else {
+        ctx.reply(message);
+      }
+    });
+  });
+});
+
+bot.action('latest_notes', (ctx) => {
+  ctx.answerCbQuery();
+  ctx.editMessageText('📚 جدیدترین جزوه‌ها هنوز اضافه نشده‌اند.\n\nبه زودی جزوه‌های به‌روز اینجا قرار می‌گیرد.');
+});
+
+bot.action('support', (ctx) => {
+  ctx.answerCbQuery();
+  ctx.editMessageText('❓ پشتیبانی:\n\nبرای کمک، پیام خود را به ادمین ارسال کنید.');
+});
+
+bot.action('about', (ctx) => {
+  ctx.answerCbQuery();
+  ctx.editMessageText('ℹ️ درباره ربات:\n\nاین ربات برای اطلاع‌رسانی اخبار و جزوه‌های درسی طراحی شده است.\n\nنسخه: 1.1');
 });
 
 bot.command('admin', (ctx) => {
