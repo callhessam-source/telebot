@@ -152,24 +152,32 @@ bot.action('about', (ctx) => {
   ctx.editMessageText('ℹ️ درباره ربات:\n\nاین ربات برای اطلاع‌رسانی اخبار و جزوه‌های درسی طراحی شده است.', backButton());
 });
 
-bot.action('back_to_main', (ctx) => {
-  ctx.answerCbQuery();
-  const mainMenu = Markup.inlineKeyboard([
-    [Markup.button.callback('📢 دریافت اخبار', 'get_news')],
-    [Markup.button.callback('📚 جدیدترین جزوه‌ها', 'latest_notes')],
-    [Markup.button.callback('❓ پشتیبانی', 'support')],
-    [Markup.button.callback('ℹ️ درباره ربات', 'about')],
-  ]);
-  ctx.editMessageText('سلام! خوش آمدید به ربات اطلاع‌رسانی برنامه‌های درسی 🎓\n\nلطفا از منوی زیر انتخاب کنید:', mainMenu);
-});
-
+// پنل ادمین کامل
 bot.command('admin', (ctx) => {
-  if (ctx.from.id !== ADMIN_ID) return ctx.reply('دسترسی غیرمجاز');
-  ctx.reply('🛠 پنل ادمین', Markup.inlineKeyboard([
-    [Markup.button.callback('📊 آمار', 'stats')],
-    [Markup.button.callback('👥 کاربران', 'users')],
+  if (ctx.from.id !== ADMIN_ID) return ctx.reply('⛔ دسترسی غیرمجاز');
+
+  ctx.reply('🛠 پنل مدیریت ادمین', Markup.inlineKeyboard([
+    [Markup.button.callback('🗑 مدیریت اعلان‌ها', 'manage_notifications')],
     [Markup.button.callback('📢 پیام همگانی', 'broadcast')],
   ]));
+});
+
+bot.action('manage_notifications', (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  db.all('SELECT * FROM notifications ORDER BY sent_at DESC', (err, rows) => {
+    if (!rows.length) return ctx.editMessageText('هیچ اعلانی وجود ندارد.', backButton());
+    const buttons = rows.map(r => [Markup.button.callback(`🗑 حذف ${r.id}`, `delete_${r.id}`)]);
+    buttons.push([Markup.button.callback('🔙 بازگشت', 'back_to_main')]);
+    ctx.editMessageText('لیست اعلان‌ها:', Markup.inlineKeyboard(buttons));
+  });
+});
+
+bot.action(/delete_(\d+)/, (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  db.run('DELETE FROM notifications WHERE id = ?', [ctx.match[1]], () => {
+    ctx.answerCbQuery('✅ حذف شد');
+    ctx.editMessageText('اعلان حذف شد.');
+  });
 });
 
 bot.launch()
